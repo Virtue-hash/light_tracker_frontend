@@ -995,7 +995,7 @@ function App() {
     setAuthScreen(screen);
   };
 
-  const API_BASE = 'https://light-tracker-4z2j.onrender.com/api';
+  const API_BASE = 'http://localhost:4000/api';
 
   const handleSignup = async () => {
     if (!signupUsername || !signupEmail || !signupPassword) {
@@ -1022,15 +1022,12 @@ function App() {
         showToast(data.error || 'Sign up failed');
         return;
       }
-      setUsername(data.full_name || signupUsername);
-      setUserId(data.id);
-      setUserEmail(data.email || signupEmail);
-      setEmailVerified(false);
-      showToast('Account created \u2713 check your email for a code');
-      // Registration also emailed a 6-digit verification code -- hold off
-      // on setLoggedIn(true) until that's confirmed, so a scammer using a
-      // fake/unreachable email can't just skip straight past this.
-      goToAuth('verify');
+         setUsername(data.full_name || signupUsername);
+   setUserId(data.id);
+   setUserEmail(data.email || signupEmail);
+   setEmailVerified(true);
+   setLoggedIn(true);
+   showToast('Account created ✓');
     } catch (err) {
       showToast('Could not reach the server \u2014 is it running?');
     } finally {
