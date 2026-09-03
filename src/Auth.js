@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import './Auth.css';
 
-const API_BASE = 'http://localhost:4000/api';
+const API_BASE = 'https://light-tracker-4z2j.onrender.com/api';
 
 function BulbIcon() {
   return (
@@ -42,6 +42,8 @@ export default function Auth({ compact = false, onLoginSuccess, onSignupSuccess 
   const [signupFullName, setSignupFullName] = useState('');
   const [signupEmail, setSignupEmail] = useState('');
   const [signupPw, setSignupPw] = useState('');
+  const [signupLocation, setSignupLocation] = useState('');
+  const [signupTransformer, setSignupTransformer] = useState('');
 
   const [loginPwVisible, setLoginPwVisible] = useState(false);
   const [signupPwVisible, setSignupPwVisible] = useState(false);
@@ -106,7 +108,10 @@ export default function Auth({ compact = false, onLoginSuccess, onSignupSuccess 
         body: JSON.stringify({
           full_name: signupFullName,
           email: signupEmail,
-          password: signupPw
+          password: signupPw,
+          electricity_type: elecType,
+          location: signupLocation,
+          transformer_name: signupTransformer || undefined
         })
       });
       const data = await res.json();
@@ -117,12 +122,11 @@ export default function Auth({ compact = false, onLoginSuccess, onSignupSuccess 
       }
 
       showToast('Account created \u2713');
-      // Note: electricity type / location aren't sent anywhere yet --
-      // /api/register only creates the `users` row. Saving them to
-      // `electricity_profiles` would need its own POST call, but that
-      // route is admin-token-protected in the current server.js, not
-      // something a freshly-registered user can call. For now elecType
-      // is just handed up to App.jsx to show on the Settings screen.
+      // electricity_type/location/transformer_name are now sent above and
+      // saved server-side to electricity_profiles by /api/register itself
+      // (it does its own insert -- no admin token needed for that part).
+      // elecType is still handed up to App.jsx too, as a fast local
+      // fallback for the Settings screen before the dashboard fetch lands.
       if (onSignupSuccess) onSignupSuccess(data, elecType);
       else window.location.href = 'dashboard.html';
     } catch (err) {
@@ -269,7 +273,21 @@ export default function Auth({ compact = false, onLoginSuccess, onSignupSuccess 
             </div>
             <div className="field">
               <label>Location</label>
-              <input className="input" placeholder="e.g. Lagos, Nigeria" />
+              <input
+                className="input"
+                placeholder="e.g. Lagos, Nigeria"
+                value={signupLocation}
+                onChange={(e) => setSignupLocation(e.target.value)}
+              />
+            </div>
+            <div className="field">
+              <label>Transformer (optional)</label>
+              <input
+                className="input"
+                placeholder="e.g. Ogunlana Dr Transformer 4"
+                value={signupTransformer}
+                onChange={(e) => setSignupTransformer(e.target.value)}
+              />
             </div>
             <div className="field">
               <label>Full name</label>

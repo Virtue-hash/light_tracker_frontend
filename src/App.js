@@ -30,25 +30,9 @@ body,
 
 body {
   font-family: 'Inter', sans-serif;
-  background:
-    radial-gradient(
-      circle at 12% 8%,
-      rgba(242,169,59,0.10),
-      transparent 42%
-    ),
-    radial-gradient(
-      circle at 88% 92%,
-      rgba(46,143,121,0.12),
-      transparent 46%
-    ),
-    var(--ink);
+  background: var(--paper);
   min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-direction: column;
-  padding: 48px 20px;
-  color: var(--paper);
+  color: var(--ink);
 }
 
 button,
@@ -61,9 +45,7 @@ button {
 }
 
 .intro {
-  text-align: center;
-  max-width: 420px;
-  margin-bottom: 30px;
+  display: none;
 }
 
 .intro .eyebrow {
@@ -97,35 +79,25 @@ button {
 }
 
 .phone {
-  width: 300px;
-  height: 640px;
-  background: linear-gradient(160deg,#1c2a4d,#0f1730);
-  border-radius: 42px;
-  padding: 10px;
-  box-shadow:
-    0 40px 70px -22px rgba(0,0,0,.6),
-    0 0 0 1px rgba(255,255,255,.05) inset;
+  width: 100%;
+  max-width: 900px;
+  height: 100dvh;
+  margin: 0 auto;
+  background: var(--paper);
+  padding: 0;
   position: relative;
   flex-shrink: 0;
 }
 
 .notch {
-  position: absolute;
-  top: 10px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 92px;
-  height: 20px;
-  background: #0f1730;
-  border-radius: 0 0 14px 14px;
-  z-index: 20;
+  display: none;
 }
 
 .screen {
   width: 100%;
   height: 100%;
   background: var(--paper);
-  border-radius: 32px;
+  border-radius: 0;
   overflow: hidden;
   position: relative;
   display: flex;
@@ -919,12 +891,21 @@ function App() {
   const [loggedIn, setLoggedIn] = useState(false);
 
   const [username, setUsername] = useState('');
+  const [userId, setUserId] = useState(null);
+  const [userEmail, setUserEmail] = useState('');
   const [signupUsername, setSignupUsername] = useState('');
   const [loginUsername, setLoginUsername] = useState('');
+  const [signupEmail, setSignupEmail] = useState('');
+  const [signupPassword, setSignupPassword] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [authSubmitting, setAuthSubmitting] = useState(false);
+  const [emailVerified, setEmailVerified] = useState(false);
+  const [verifyCode, setVerifyCode] = useState('');
 
   const [electricityType, setElectricityType] = useState('Prepaid');
   const [location, setLocation] = useState('Lagos, Nigeria');
   const [budget, setBudget] = useState('15,000');
+  const [transformerName, setTransformerName] = useState('');
 
   const [currentPage, setCurrentPage] = useState('home');
 
@@ -955,6 +936,18 @@ function App() {
 
   const [topicCounters, setTopicCounters] = useState({});
   const [fallbackCounter, setFallbackCounter] = useState(0);
+
+  const [topUpOpen, setTopUpOpen] = useState(false);
+  const [topUpAmount, setTopUpAmount] = useState('2000');
+  const [topUpSubmitting, setTopUpSubmitting] = useState(false);
+  const [chatSubmitting, setChatSubmitting] = useState(false);
+
+  // real dashboard data, fetched from the server -- replaces the old
+  // hardcoded "Yaba, Lagos" / "~3.5 hrs" / "14 units" placeholder text
+  const [profile, setProfile] = useState(null); // electricity_profiles row
+  const [powerEvents, setPowerEvents] = useState([]); // this user's power_status_events
+  const [purchases, setPurchases] = useState([]); // this user's unit_purchases
+  const [dashLoading, setDashLoading] = useState(true);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -1002,6 +995,122 @@ function App() {
     setAuthScreen(screen);
   };
 
+  const API_BASE = 'http://localhost:4000/api';
+
+  const handleSignup = async () => {
+    if (!signupUsername || !signupEmail || !signupPassword) {
+      showToast('Fill in username, email, and password');
+      return;
+    }
+    setAuthSubmitting(true);
+    try {
+      const res = await fetch(`${API_BASE}/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          full_name: signupUsername,
+          email: signupEmail,
+          password: signupPassword,
+          electricity_type: electricityType,
+          location: location,
+          monthly_budget: Number(String(budget).replace(/,/g, '')) || 0,
+          transformer_name: transformerName
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showToast(data.error || 'Sign up failed');
+        return;
+      }
+      setUsername(data.full_name || signupUsername);
+      setUserId(data.id);
+      setUserEmail(data.email || signupEmail);
+      setEmailVerified(false);
+      showToast('Account created \u2713 check your email for a code');
+      // Registration also emailed a 6-digit verification code -- hold off
+      // on setLoggedIn(true) until that's confirmed, so a scammer using a
+      // fake/unreachable email can't just skip straight past this.
+      goToAuth('verify');
+    } catch (err) {
+      showToast('Could not reach the server \u2014 is it running?');
+    } finally {
+      setAuthSubmitting(false);
+    }
+  };
+
+  const handleVerifyCode = async () => {
+    if (!verifyCode) {
+      showToast('Enter the code from your email');
+      return;
+    }
+    setAuthSubmitting(true);
+    try {
+      const res = await fetch(`${API_BASE}/verify-email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: userEmail, code: verifyCode })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showToast(data.error || 'Verification failed');
+        return;
+      }
+      setEmailVerified(true);
+      setLoggedIn(true);
+      showToast('Email verified \u2713');
+    } catch (err) {
+      showToast('Could not reach the server \u2014 is it running?');
+    } finally {
+      setAuthSubmitting(false);
+    }
+  };
+
+  const handleResendCode = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/resend-verification`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: userEmail })
+      });
+      const data = await res.json();
+      showToast(data.message || (data.sent ? 'Code resent' : 'Could not resend code'));
+    } catch (err) {
+      showToast('Could not reach the server \u2014 is it running?');
+    }
+  };
+
+  const handleLogin = async () => {
+    if (!loginUsername || !loginPassword) {
+      showToast('Fill in email and password');
+      return;
+    }
+    setAuthSubmitting(true);
+    try {
+      const res = await fetch(`${API_BASE}/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        // Note: your users table logs in by EMAIL, not username -- the
+        // "Username" field on the login screen is sent as the email here.
+        body: JSON.stringify({ email: loginUsername, password: loginPassword })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showToast(data.error || 'Invalid email or password');
+        return;
+      }
+      setUsername(data.full_name || loginUsername);
+      setUserId(data.id);
+      setUserEmail(data.email || loginUsername);
+      setEmailVerified(!!data.email_verified);
+      setLoggedIn(true);
+      showToast('Welcome back \u2713');
+    } catch (err) {
+      showToast('Could not reach the server \u2014 is it running?');
+    } finally {
+      setAuthSubmitting(false);
+    }
+  };
+
   const completeAuth = (message, name) => {
     setUsername(name || 'Ade');
     setLoggedIn(true);
@@ -1014,6 +1123,153 @@ function App() {
     setCurrentPage('home');
     showToast('Logged out');
   };
+
+  const handleTopUp = async () => {
+    const amount = Number(topUpAmount);
+    if (!amount || amount < 100) {
+      showToast('Enter a valid amount (min \u20a6100)');
+      return;
+    }
+    if (!userId || !userEmail) {
+      showToast('You need to be logged in to top up');
+      return;
+    }
+    setTopUpSubmitting(true);
+    try {
+      const res = await fetch(`${API_BASE}/topup/initialize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: userId,
+          email: userEmail,
+          amount_naira: amount,
+          callback_url: window.location.origin + window.location.pathname
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showToast(data.error || 'Could not start payment');
+        return;
+      }
+      window.location.href = data.authorization_url;
+    } catch (err) {
+      showToast('Could not reach the server \u2014 is it running?');
+    } finally {
+      setTopUpSubmitting(false);
+    }
+  };
+
+  const handleTestNotification = async () => {
+    if (!userId) {
+      showToast('You need to be logged in');
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE}/notify/test`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: userId })
+      });
+      const data = await res.json();
+      if (data.sent) {
+        showToast('Test email sent \u2713 check your inbox');
+      } else {
+        showToast(data.reason || 'Email not configured yet');
+      }
+    } catch (err) {
+      showToast('Could not reach the server \u2014 is it running?');
+    }
+  };
+
+  // After returning from Paystack, it appends ?reference=... to the
+  // callback URL. On load, check for that and verify server-side.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const reference = params.get('reference');
+    if (!reference) return;
+
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/topup/verify/${reference}`);
+        const data = await res.json();
+        if (data.verified) {
+          showToast('Top-up successful \u2713');
+        } else {
+          showToast('Payment was not completed');
+        }
+      } catch (err) {
+        showToast('Could not verify payment \u2014 is the server running?');
+      } finally {
+        window.history.replaceState({}, '', window.location.pathname);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Fetch this user's real electricity profile, outage history, and
+  // purchase history once logged in. The server's GET routes return
+  // every row for every user (no per-user filter built in), so we
+  // filter to this user's rows here.
+  useEffect(() => {
+    if (!loggedIn || !userId) return;
+    let cancelled = false;
+
+    (async () => {
+      setDashLoading(true);
+      try {
+        const [profilesRes, eventsRes, purchasesRes, transformersRes] = await Promise.all([
+          fetch(`${API_BASE}/electricity_profiles`),
+          fetch(`${API_BASE}/power_status_events`),
+          fetch(`${API_BASE}/unit_purchases`),
+          fetch(`${API_BASE}/transformers`)
+        ]);
+        const [allProfiles, allEvents, allPurchases, allTransformers] = await Promise.all([
+          profilesRes.json(),
+          eventsRes.json(),
+          purchasesRes.json(),
+          transformersRes.json()
+        ]);
+        if (cancelled) return;
+
+        const myProfile = allProfiles.find((p) => p.user_id === userId) || null;
+        if (myProfile && myProfile.transformer_id) {
+          const t = allTransformers.find((tr) => tr.id === myProfile.transformer_id);
+          myProfile.transformer_name = t ? t.name : null;
+        }
+        setProfile(myProfile);
+        setPowerEvents(
+          allEvents
+            .filter((e) => e.user_id === userId)
+            .sort((a, b) => new Date(b.started_at) - new Date(a.started_at))
+        );
+        setPurchases(
+          allPurchases
+            .filter((p) => p.user_id === userId)
+            .sort((a, b) => new Date(b.purchased_at) - new Date(a.purchased_at))
+        );
+      } catch (err) {
+        showToast('Could not load your data \u2014 is the server running?');
+      } finally {
+        if (!cancelled) setDashLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loggedIn, userId]);
+
+  // Derived, real values -- replaces the hardcoded "~3.5 hrs" /
+  // "12 past outages" / "14 units" that never changed before.
+  const closedOutages = powerEvents.filter((e) => e.status === 'OFF' && e.ended_at);
+  const avgRestorationMinutes = closedOutages.length
+    ? closedOutages.reduce((sum, e) => sum + (e.duration_minutes || 0), 0) / closedOutages.length
+    : null;
+  const restorationHrs = avgRestorationMinutes ? (avgRestorationMinutes / 60).toFixed(1) : null;
+  const confidenceLabel =
+    closedOutages.length >= 5 ? 'high confidence' : closedOutages.length > 0 ? 'low confidence' : null;
+  const latestPurchase = purchases[0] || null;
+  const userLocation = profile ? profile.location : dashLoading ? 'Loading\u2026' : 'No location set';
 
   const togglePower = () => {
     const newStatus = !powerOn;
@@ -1028,9 +1284,31 @@ function App() {
     );
   };
 
-  const saveReport = () => {
-    setPowerOn(reportStatus === 'on');
-    showToast('Outage report saved ✓');
+  const saveReport = async () => {
+    if (!userId) {
+      showToast('You need to be logged in');
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE}/report-outage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: userId, status: reportStatus === 'on' ? 'ON' : 'OFF' })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showToast(data.error || 'Could not save report');
+        return;
+      }
+      setPowerOn(reportStatus === 'on');
+      showToast(
+        reportStatus === 'on'
+          ? `Restoration logged \u2713 (${data.duration_minutes || '?'} min outage)`
+          : 'Outage reported \u2713 \u2014 your transformer neighbors were notified'
+      );
+    } catch (err) {
+      showToast('Could not reach the server \u2014 is it running?');
+    }
   };
 
   const resetReport = () => {
@@ -1119,7 +1397,7 @@ function App() {
     return reply;
   };
 
-  const sendChat = (textOverride) => {
+  const sendChat = async (textOverride) => {
     const text = (
       textOverride !== undefined
         ? textOverride
@@ -1127,6 +1405,10 @@ function App() {
     ).trim();
 
     if (!text) return;
+    if (!userId) {
+      showToast('You need to be logged in to chat');
+      return;
+    }
 
     setChatMessages((messages) => [
       ...messages,
@@ -1138,18 +1420,38 @@ function App() {
 
     setChatInput('');
     setTyping(true);
+    setChatSubmitting(true);
 
-    setTimeout(() => {
+    try {
+      const res = await fetch(`${API_BASE}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: userId, message: text })
+      });
+      const data = await res.json();
       setTyping(false);
+
+      if (!res.ok) {
+        setChatMessages((messages) => [
+          ...messages,
+          { type: 'ai', text: data.error || 'Something went wrong \u2014 try again.' }
+        ]);
+        return;
+      }
 
       setChatMessages((messages) => [
         ...messages,
-        {
-          type: 'ai',
-          text: replyFor(text)
-        }
+        { type: 'ai', text: data.reply }
       ]);
-    }, 850);
+    } catch (err) {
+      setTyping(false);
+      setChatMessages((messages) => [
+        ...messages,
+        { type: 'ai', text: 'Could not reach the server \u2014 is it running?' }
+      ]);
+    } finally {
+      setChatSubmitting(false);
+    }
   };
 
   const toggleSetting = (key) => {
@@ -1273,6 +1575,19 @@ function App() {
           </div>
 
           <div className="field">
+            <label>Transformer (optional)</label>
+
+            <input
+              className="input"
+              value={transformerName}
+              onChange={(e) =>
+                setTransformerName(e.target.value)
+              }
+              placeholder="e.g. Kano GRA Transformer 5"
+            />
+          </div>
+
+          <div className="field">
             <label>Username</label>
 
             <input
@@ -1286,11 +1601,29 @@ function App() {
           </div>
 
           <div className="field">
+            <label>Email</label>
+
+            <input
+              className="input"
+              type="email"
+              value={signupEmail}
+              onChange={(e) =>
+                setSignupEmail(e.target.value)
+              }
+              placeholder="ade@example.com"
+            />
+          </div>
+
+          <div className="field">
             <label>Password</label>
 
             <input
               className="input"
               type="password"
+              value={signupPassword}
+              onChange={(e) =>
+                setSignupPassword(e.target.value)
+              }
               placeholder="••••••••"
             />
           </div>
@@ -1300,14 +1633,10 @@ function App() {
             <button
               className="btn"
               type="button"
-              onClick={() =>
-                completeAuth(
-                  'Account created',
-                  signupUsername
-                )
-              }
+              disabled={authSubmitting}
+              onClick={handleSignup}
             >
-              Create account
+              {authSubmitting ? 'Creating account\u2026' : 'Create account'}
             </button>
 
             <div className="link-row">
@@ -1318,6 +1647,54 @@ function App() {
                 onClick={() => goToAuth('login')}
               >
                 Log in
+              </button>
+            </div>
+
+          </div>
+
+        </section>
+      );
+    }
+
+    if (authScreen === 'verify') {
+      return (
+        <section className="scr active">
+
+          <div className="scr-header">
+            <h2>Check your email</h2>
+            <span>We sent a 6-digit code to {userEmail}</span>
+          </div>
+
+          <div className="field">
+            <label>Verification code</label>
+
+            <input
+              className="input"
+              value={verifyCode}
+              onChange={(e) => setVerifyCode(e.target.value)}
+              placeholder="123456"
+            />
+          </div>
+
+          <div className="actions">
+
+            <button
+              className="btn"
+              type="button"
+              disabled={authSubmitting}
+              onClick={handleVerifyCode}
+            >
+              {authSubmitting ? 'Verifying\u2026' : 'Verify'}
+            </button>
+
+            <div className="link-row">
+              Didn't get it?{' '}
+              <button
+                className="link"
+                type="button"
+                onClick={handleResendCode}
+              >
+                Resend code
               </button>
             </div>
 
@@ -1377,15 +1754,16 @@ function App() {
         </div>
 
         <div className="field">
-          <label>Username</label>
+          <label>Email</label>
 
           <input
             className="input"
+            type="email"
             value={loginUsername}
             onChange={(e) =>
               setLoginUsername(e.target.value)
             }
-            placeholder="ade_j"
+            placeholder="ade@example.com"
           />
         </div>
 
@@ -1395,6 +1773,10 @@ function App() {
           <input
             className="input"
             type="password"
+            value={loginPassword}
+            onChange={(e) =>
+              setLoginPassword(e.target.value)
+            }
             placeholder="••••••••"
           />
         </div>
@@ -1404,14 +1786,10 @@ function App() {
           <button
             className="btn"
             type="button"
-            onClick={() =>
-              completeAuth(
-                'Welcome back',
-                loginUsername
-              )
-            }
+            disabled={authSubmitting}
+            onClick={handleLogin}
           >
-            Log in
+            {authSubmitting ? 'Logging in\u2026' : 'Log in'}
           </button>
 
           <div className="link-row">
@@ -1479,8 +1857,8 @@ function App() {
 
             <span>
               {powerOn
-                ? 'Steady for 3h 10m in Yaba'
-                : 'Off for 1h 42m in Yaba'}
+                ? `Steady in ${userLocation}`
+                : `Off in ${userLocation}`}
             </span>
 
           </div>
@@ -1503,16 +1881,18 @@ function App() {
             </div>
 
             <div className="big">
-              ~3.5 hrs
+              {dashLoading ? '\u2026' : restorationHrs ? `~${restorationHrs} hrs` : 'Not enough data yet'}
             </div>
 
             <div className="sub">
               Based on outage history for this area
             </div>
 
-            <div className="confidence">
-              12 past outages · high confidence
-            </div>
+            {confidenceLabel && (
+              <div className="confidence">
+                {closedOutages.length} past outages \u00b7 {confidenceLabel}
+              </div>
+            )}
 
           </div>
         )}
@@ -1520,8 +1900,8 @@ function App() {
         <div className="card">
 
           <div className="row1">
-            <span>Units remaining</span>
-            <span>14 units</span>
+            <span>Last top-up</span>
+            <span>{dashLoading ? '\u2026' : latestPurchase ? `${latestPurchase.units} units` : 'None yet'}</span>
           </div>
 
           <div className="bar">
@@ -1529,7 +1909,9 @@ function App() {
           </div>
 
           <div className="sub">
-            ≈ 2 days left · last topped up Jul 21
+            {latestPurchase
+              ? `\u20a6${latestPurchase.amount_naira} \u00b7 topped up ${new Date(latestPurchase.purchased_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
+              : 'Top up to see it here'}
           </div>
 
         </div>
@@ -1541,9 +1923,7 @@ function App() {
         <button
           className="qbtn"
           type="button"
-          onClick={() =>
-            showToast('Redirecting to top-up…')
-          }
+          onClick={() => setTopUpOpen(true)}
         >
           Top up
         </button>
@@ -1565,6 +1945,30 @@ function App() {
         </button>
 
       </div>
+
+      {topUpOpen && (
+        <div className="info-strip" style={{ margin: '0 18px 14px' }}>
+          <b>Top up units</b>
+          <div className="field" style={{ padding: 0, marginTop: 10 }}>
+            <label>Amount (\u20a6)</label>
+            <input
+              className="input"
+              type="number"
+              min="100"
+              value={topUpAmount}
+              onChange={(e) => setTopUpAmount(e.target.value)}
+            />
+          </div>
+          <div className="actions" style={{ padding: '12px 0 0' }}>
+            <button className="btn" type="button" onClick={handleTopUp} disabled={topUpSubmitting}>
+              {topUpSubmitting ? 'Starting payment\u2026' : 'Continue to Paystack'}
+            </button>
+            <button className="btn" type="button" style={{ background: 'transparent', border: '1px solid var(--line)', color: 'var(--ink)', boxShadow: 'none' }} onClick={() => setTopUpOpen(false)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
     </section>
   );
@@ -1632,7 +2036,7 @@ function App() {
       <div className="info-strip">
 
         <b>
-          Average restoration: 3–4 hrs
+          Average restoration: {restorationHrs ? `~${restorationHrs} hrs` : 'not enough data yet'}
         </b>
 
         Estimated from past outages logged for this area
@@ -1799,10 +2203,23 @@ function App() {
         <div>
           <b>{displayName}</b>
           <span>
-            Yaba, Lagos · {electricityType}
+            {userLocation} · {profile ? profile.electricity_type : electricityType}
+            {profile && profile.transformer_name ? ` · ${profile.transformer_name}` : ''}
           </span>
         </div>
 
+      </div>
+
+      <div className="info-strip">
+        <b>{emailVerified ? 'Email verified \u2713' : 'Email not verified'}</b>
+        {!emailVerified && (
+          <>
+            {' \u2014 '}
+            <button className="link" type="button" onClick={handleResendCode}>
+              Resend code
+            </button>
+          </>
+        )}
       </div>
 
       {[
@@ -1829,6 +2246,14 @@ function App() {
       ))}
 
       <div className="actions">
+
+        <button
+          className="btn ghost small"
+          type="button"
+          onClick={handleTestNotification}
+        >
+          Send test notification
+        </button>
 
         <button
           className="btn ghost small"
