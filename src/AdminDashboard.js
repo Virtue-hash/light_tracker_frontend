@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import './AdminDashboard.css';
 
-const API_BASE = 'http://localhost:4000/api';
+const API_BASE = 'https://light-tracker-4z2j.onrender.com/api';
 const TOKEN_STORAGE_KEY = 'lt_admin_token';
 
 /* ============================================================
